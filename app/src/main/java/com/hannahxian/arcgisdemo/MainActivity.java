@@ -4,20 +4,38 @@ import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import com.afollestad.materialdialogs.GravityEnum;
+import com.afollestad.materialdialogs.MaterialDialog;
+import com.esri.android.map.FeatureLayer;
 import com.esri.android.map.GraphicsLayer;
 import com.esri.android.map.MapOnTouchListener;
+import com.esri.android.map.MapOptions;
 import com.esri.android.map.MapView;
 import com.esri.android.map.ags.ArcGISFeatureLayer;
+import com.esri.android.map.ags.ArcGISPopupInfo;
 import com.esri.android.map.ags.ArcGISTiledMapServiceLayer;
+import com.esri.android.map.popup.ArcGISAttachmentsView;
+import com.esri.android.map.popup.ArcGISAttributeView;
+import com.esri.android.map.popup.Popup;
+import com.esri.android.runtime.ArcGISRuntime;
+import com.esri.core.geodatabase.GeodatabaseFeatureServiceTable;
 import com.esri.core.geometry.Envelope;
 import com.esri.core.geometry.Point;
+import com.esri.core.geometry.SpatialReference;
 import com.esri.core.map.CallbackListener;
+import com.esri.core.map.Feature;
 import com.esri.core.map.FeatureSet;
 import com.esri.core.map.Field;
 import com.esri.core.map.Graphic;
+import com.esri.core.map.popup.PopupInfo;
 import com.esri.core.symbol.SimpleFillSymbol;
 import com.esri.core.symbol.SimpleLineSymbol;
 import com.esri.core.tasks.SpatialRelationship;
@@ -30,59 +48,24 @@ import butterknife.Bind;
 import butterknife.ButterKnife;
 
 public class MainActivity extends AppCompatActivity {
+    static String MAP_URL = "http://219.146.254.74:6080/arcgis/rest/services/ArcGisOL/qdplane/MapServer";
     MapView map = null;
-    ArcGISFeatureLayer fLayer = null;
     GraphicsLayer gLayer = null;
 
     SimpleFillSymbol sfs;
-    CallbackListener<FeatureSet> callback = new CallbackListener<FeatureSet>() {
+    GeodatabaseFeatureServiceTable table;
+    FeatureLayer featureLayer;
+    ArcGISFeatureLayer arcGISFeatureLayer;
+    T touchListener;
 
-        public void onCallback(FeatureSet fSet) {
-            List<Field> fs = fSet.getFields();
-            for (Field f:fs
-                 ) {
-                Toast.makeText(MainActivity.this, f.getName(), Toast.LENGTH_SHORT).show();
-            }
-        }
-
-        public void onError(Throwable arg0) {
-            gLayer.removeAll();
-        }
-    };
-
-    /** Called when the activity is first created. */
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         map = (MapView)findViewById(R.id.mapview);
-        map.setExtent(new Envelope(-10868502.895856911, 4470034.144641369,
-                -10837928.084542884, 4492965.25312689), 0);
-        ArcGISTiledMapServiceLayer tms = new ArcGISTiledMapServiceLayer(
-                "http://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer");
-        map.addLayer(tms);
 
-        ArcGISFeatureLayer.Options o = new ArcGISFeatureLayer.Options();
-        o.mode = ArcGISFeatureLayer.MODE.ONDEMAND;
-        o.outFields = new String[] { "FIELD_KID", "APPROXACRE", "FIELD_NAME",
-                "STATUS", "PROD_GAS", "PROD_OIL", "ACTIVEPROD", "CUMM_OIL",
-                "MAXOILWELL", "LASTOILPRO", "LASTOILWEL", "LASTODATE",
-                "CUMM_GAS", "MAXGASWELL", "LASTGASPRO", "LASTGASWEL",
-                "LASTGDATE", "AVGDEPTH", "AVGDEPTHSL", "FIELD_TYPE",
-                "FIELD_KIDN" };
-        fLayer = new ArcGISFeatureLayer(
-                "http://sampleserver3.arcgisonline.com/ArcGIS/rest/services/Petroleum/KSPetro/MapServer/1",
-                o);
-        SimpleFillSymbol fiedldsSelectionSymbol = new SimpleFillSymbol(
-                Color.MAGENTA);
-        fiedldsSelectionSymbol
-                .setOutline(new SimpleLineSymbol(Color.YELLOW, 2));
-        fLayer.setSelectionSymbol(fiedldsSelectionSymbol);
+        initLayer();
 
-        map.addLayer(fLayer);
-
-        // selection box
-        // Use DYNAMIC rendering mode for drawing graphics(Sketching)
         gLayer = new GraphicsLayer(GraphicsLayer.RenderingMode.DYNAMIC);
         sfs = new SimpleFillSymbol(Color.BLACK);
         sfs.setOutline(new SimpleLineSymbol(Color.RED, 2));
@@ -90,77 +73,37 @@ public class MainActivity extends AppCompatActivity {
 
         map.addLayer(gLayer);
 
-        MyTouchListener touchListener = new MyTouchListener(this, map);
-        map.setOnTouchListener(touchListener);
-
-        Toast.makeText(this, "Press down to start let go the stop", Toast.LENGTH_SHORT).show();
+        touchListener = new T(this, map);
 
     }
+    private void initLayer(){
+//        map.setMapBackground(0xffffff, 0xffffff, 0, 0);
 
-    class MyTouchListener extends MapOnTouchListener {
+       /*ArcGISTiledMapServiceLayer tms = new ArcGISTiledMapServiceLayer(
+                "http://219.146.254.74:6080/arcgis/rest/services/ArcGisOL/qdplane/MapServer");
+        map.addLayer(tms);*/
 
-        Graphic g;
-        // first point clicked on the map
-        Point p0 = null;
-        int uid = -1;
+        table = new GeodatabaseFeatureServiceTable(MapOptions.MapType.STREETS.toString(),0);
+        table.setSpatialReference(SpatialReference.create(102100));
 
-        public MyTouchListener(Context arg0, MapView arg1) {
-            super(arg0, arg1);
-        }
+        table.initialize(
+                new CallbackListener<GeodatabaseFeatureServiceTable.Status>() {
 
-        @Override
-        public boolean onSingleTap(MotionEvent point) {
+                    @Override
+                    public void onError(Throwable e) {
+                        System.out.println(table.getInitializationError());
+                    }
 
-            return super.onSingleTap(point);
-        }
-
-        public boolean onDragPointerMove(MotionEvent from, MotionEvent to) {
-            if (uid == -1) { // first time
-                g = new Graphic(null, sfs);
-                p0 = map.toMapPoint(from.getX(), from.getY());
-                uid = gLayer.addGraphic(g);
-
-            } else {
-
-                Point p2 = map.toMapPoint(new Point(to.getX(), to.getY()));
-                Envelope envelope = new Envelope();
-                envelope.merge(p0);
-                envelope.merge(p2);
-                gLayer.updateGraphic(uid, envelope);
-
-            }
-
-            return true;
-
-        }
-
-        public boolean onDragPointerUp(MotionEvent from, MotionEvent to) {
-
-            if (uid != -1) {
-                g = gLayer.getGraphic(uid);
-                if (g!= null && g.getGeometry() != null) {
-                    fLayer.clearSelection();
-                    Query q = new Query();
-                    // optional
-                    q.setWhere("PROD_GAS='Yes'");
-                    q.setReturnGeometry(true);
-                    q.setInSpatialReference(map.getSpatialReference());
-                    q.setGeometry(g.getGeometry());
-                    q.setSpatialRelationship(SpatialRelationship.INTERSECTS);
-
-                    fLayer.selectFeatures(q, ArcGISFeatureLayer.SELECTION_METHOD.NEW, callback);
-                }
-                gLayer.removeAll();
-
-            }
-
-            p0 = null;
-            // Resets it
-            uid = -1;
-            return true;
-
-        }
-
+                    @Override
+                    public void onCallback(GeodatabaseFeatureServiceTable.Status status) {
+                        if (status == GeodatabaseFeatureServiceTable.Status.INITIALIZED) {
+                            featureLayer = new FeatureLayer(table);
+                            map.addLayer(featureLayer);
+                            touchListener.setFeatureLayer(featureLayer);
+                            map.setOnTouchListener(touchListener);
+                        }
+                    }
+                });
     }
 
     @Override

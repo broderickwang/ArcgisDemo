@@ -11,6 +11,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.afollestad.materialdialogs.GravityEnum;
 import com.afollestad.materialdialogs.MaterialDialog;
@@ -26,6 +27,7 @@ import com.esri.android.map.popup.Popup;
 import com.esri.core.geodatabase.GeodatabaseFeature;
 import com.esri.core.geodatabase.GeodatabaseFeatureServiceTable;
 import com.esri.core.geometry.Point;
+import com.esri.core.geometry.SpatialReference;
 import com.esri.core.map.CallbackListener;
 import com.esri.core.map.Feature;
 import com.esri.core.map.popup.PopupInfo;
@@ -57,6 +59,8 @@ public class Main2Activity extends AppCompatActivity {
         setContentView(R.layout.activity_main2);
         ButterKnife.bind(this);
 
+        Toast.makeText(this, "2", Toast.LENGTH_SHORT).show();
+
         initLayer();
 
         map.setOnTouchListener(new T(this,map));
@@ -69,7 +73,23 @@ public class Main2Activity extends AppCompatActivity {
      */
     private void initLayer(){
         table = new GeodatabaseFeatureServiceTable(MAP_URL,0);
-        featureLayer = new FeatureLayer(table);
+        table.setSpatialReference(SpatialReference.create(102100));
+
+        table.initialize(
+                new CallbackListener<GeodatabaseFeatureServiceTable.Status>() {
+
+                    @Override
+                    public void onError(Throwable e) {
+                        System.out.println(table.getInitializationError());
+                    }
+
+                    @Override
+                    public void onCallback(GeodatabaseFeatureServiceTable.Status status) {
+                        if (status == GeodatabaseFeatureServiceTable.Status.INITIALIZED) {
+                            featureLayer = new FeatureLayer(table);
+                        }
+                    }
+                });
     }
     class T extends MapOnTouchListener{
         public T(Context context, MapView view) {
